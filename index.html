@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎪 Đấu Trường Tri Ân - Livestream Giveaway Arena</title>
+  <meta name="description" content="Hệ thống mini-game đua vịt, đua bi và sinh tồn kịch tính dành riêng cho livestream tri ân và tặng quà người xem cuối tuần.">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="css/style.css?v=3.2">
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      var d = document.createElement('div');
+      d.id = 'GLOBAL_SCRIPT_ERROR';
+      d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#ff0033;color:#fff;padding:24px;font-size:18px;font-family:monospace;z-index:999999;border-bottom:3px solid #fff;white-space:pre-wrap;';
+      d.textContent = '❌ JS ERROR: ' + msg + '\nLocation: ' + url + ':' + line + ':' + col + '\nStack: ' + (error ? error.stack : 'N/A');
+      document.body ? document.body.appendChild(d) : window.addEventListener('DOMContentLoaded', function() { document.body.appendChild(d); });
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      var d = document.createElement('div');
+      d.id = 'GLOBAL_PROMISE_ERROR';
+      d.style.cssText = 'position:fixed;top:100px;left:0;right:0;background:#cc0000;color:#fff;padding:24px;font-size:18px;font-family:monospace;z-index:999999;';
+      d.textContent = '❌ UNHANDLED REJECTION: ' + (e.reason ? (e.reason.stack || e.reason) : e);
+      document.body ? document.body.appendChild(d) : window.addEventListener('DOMContentLoaded', function() { document.body.appendChild(d); });
+    });
+  </script>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- TOP NAVIGATION & STATUS BAR -->
+    <header class="top-nav">
+      <div class="brand-section">
+        <div class="brand-icon">🎪</div>
+        <div>
+          <h1 class="brand-title">ĐẤU TRƯỜNG TRI ÂN</h1>
+        </div>
+        <div class="live-badge" id="liveBadge">
+          <span class="pulse-dot"></span>
+          <span>LIVE STREAM</span>
+        </div>
+      </div>
+
+      <!-- TOP CONTROLS -->
+      <div class="top-controls">
+        <button id="btnToggleAudio" class="nav-btn active" title="Bật/Tắt âm thanh trò chơi">
+          🔊 Âm thanh
+        </button>
+        <button id="btnOpenHistory" class="nav-btn" title="Xem danh sách người đã trúng thưởng">
+          📜 Lịch sử trao giải
+        </button>
+        <button id="btnToggleFullscreen" class="nav-btn" title="Toàn màn hình">
+          ⛶ Toàn màn hình
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN APP LAYOUT -->
+    <div class="main-layout">
+
+      <!-- LEFT SIDEBAR: CONTROL & SETUP PANEL -->
+      <aside class="sidebar">
+        
+        <!-- SECTION 1: CHOOSE GAME -->
+        <section class="sidebar-section">
+          <div class="section-title">
+            <span>1. Chọn Mini-Game</span>
+          </div>
+          <div class="game-tiles">
+            <div class="game-tile active" data-game="duck">
+              <div class="tile-icon">🦆</div>
+              <div class="tile-info">
+                <div class="tile-name">Đua Vịt Vượt Thác</div>
+                <div class="tile-desc">Vịt bơi lội, lướt sóng, lật kèo nghẹt thở</div>
+              </div>
+            </div>
+
+            <div class="game-tile" data-game="marble">
+              <div class="tile-icon">🔴</div>
+              <div class="tile-info">
+                <div class="tile-name">Đua Bi Zíc-Zắc (Plinko)</div>
+                <div class="tile-desc">Bi lăn qua mê cung chông gai nảy lửa</div>
+              </div>
+            </div>
+
+            <div class="game-tile" data-game="snake">
+              <div class="tile-icon">🐍</div>
+              <div class="tile-info">
+                <div class="tile-name">Đại Chiến Rắn Săn Mồi</div>
+                <div class="tile-desc">Ăn mồi dài ra, húc đầu loại dần, con sống cuối thắng</div>
+              </div>
+            </div>
+
+            <div class="game-tile" data-game="axe">
+              <div class="tile-icon">⚔️</div>
+              <div class="tile-info">
+                <div class="tile-name">Đấu Trường Tiến Hóa (EvoWars)</div>
+                <div class="tile-desc">Ăn hạt tiến hóa, vung rìu chém cận chiến, khổng lồ hóa</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION 2: PARTICIPANTS ROSTER -->
+        <section class="sidebar-section">
+          <div class="section-title">
+            <span>2. Danh Sách Người Xem</span>
+            <span class="badge-count" id="playerCountBadge">20 người</span>
+          </div>
+          <div class="players-textarea-wrap">
+            <textarea id="playersTextarea" class="players-textarea" placeholder="Dán danh sách tên người xem (mỗi dòng 1 tên)..."></textarea>
+          </div>
+          <div class="player-tools">
+            <button id="btnRemoveWinners" class="tool-btn highlight-btn" title="Xóa tên những người đã chiến thắng khỏi danh sách">🚫 Xóa người đã thắng</button>
+            <button id="btnDeduplicate" class="tool-btn" title="Lọc bỏ những ai spam nhiều lần">Lọc trùng</button>
+            <button id="btnShuffle" class="tool-btn" title="Xáo trộn ngẫu nhiên vị trí">Xáo trộn</button>
+            <button id="btnClearPlayers" class="tool-btn" title="Xóa toàn bộ danh sách">Xóa hết</button>
+          </div>
+        </section>
+
+        <!-- SIDEBAR FOOTER: BIG ACTION BUTTONS -->
+        <div class="sidebar-footer">
+          <button id="btnStartRace" class="btn-start-race">
+            <span>🚀 BẮT ĐẦU VÒNG ĐẤU</span>
+          </button>
+          <div class="control-btn-group">
+            <button id="btnPauseRace" class="btn-sub">⏸ Tạm dừng</button>
+            <button id="btnResetRace" class="btn-sub">🔄 Đặt lại</button>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- CENTER / RIGHT: GAME ARENA VIEWPORT -->
+      <main class="arena-stage">
+        
+        <!-- MAIN GAME CANVAS -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- HUD: LIVE MATCH TIMER -->
+        <div class="hud-overlay">
+          <div class="match-timer-pill" id="matchTimerPill">
+            <span class="timer-icon">⏳</span>
+            <span class="timer-text" id="matchTimerText">03:00</span>
+          </div>
+        </div>
+
+        <!-- 10-ROUND GIVEAWAY RESULTS PANEL -->
+        <div class="post-race-panel" id="postRacePanel">
+          <div class="post-race-header">
+            <div class="post-race-title">🏆 KẾT QUẢ CHUNG CUỘC</div>
+            <div class="post-race-round-badge" id="postRaceRoundBadge">0/10 Lượt</div>
+          </div>
+          <div class="post-race-winners-list" id="postRaceWinnersList">
+            <div class="no-winners-hint">Chưa có người thắng cuộc.<br>Bắt đầu Lượt 1 để trao quà!</div>
+          </div>
+          <div class="post-race-footer-actions">
+            <button class="btn-reset-rounds" id="btnResetRounds" title="Làm mới 10 lượt để bắt đầu phiên mới">🔄 Làm mới 10 lượt</button>
+          </div>
+        </div>
+
+        <!-- BIG COUNTDOWN OVERLAY (3 - 2 - 1 - GO) -->
+        <div id="countdownOverlay" class="countdown-overlay"></div>
+
+      </main>
+
+    </div>
+
+    <!-- WINNER CELEBRATION MODAL -->
+    <div id="winnerModal" class="modal-backdrop">
+      <canvas id="confettiCanvas"></canvas>
+      
+      <div class="winner-card">
+        <div class="crown-badge">👑</div>
+        <div class="winner-title">🎉 CHÚC MỪNG CHIẾN THẮNG 🎉</div>
+        <div class="winner-round-badge" id="winnerRoundBadge">LƯỢT 1 / 10</div>
+        <div class="winner-name-display" id="winnerNameDisplay">Nguyễn Văn A</div>
+        <div class="winner-game-badge" id="winnerGameBadge">🔴 Đua Bi Zíc-Zắc</div>
+        
+        <div class="podium-runners-up">
+          <div class="runner-box">
+            <span class="runner-rank">🥈 HẠNG NHÌ</span>
+            <span class="runner-name" id="runner2Name">Trần Văn Nam</span>
+          </div>
+          <div class="runner-box">
+            <span class="runner-rank">🥉 HẠNG BA</span>
+            <span class="runner-name" id="runner3Name">Phạm Minh Đức</span>
+          </div>
+        </div>
+
+        <div class="screenshot-notice">
+          📸 <strong>Hãy chụp lại màn hình này</strong> và gửi cho chủ kênh để nhận phần thưởng nhé!
+        </div>
+
+        <!-- FULL LEADERBOARD ACCORDION INSIDE WINNER MODAL -->
+        <div class="modal-leaderboard-section" id="modalLeaderboardSection" style="display:none;">
+          <div class="modal-leaderboard-title">📋 BẢNG XẾP HẠNG LƯỢT ĐẤU NÀY</div>
+          <div class="modal-leaderboard-list" id="modalLeaderboardList"></div>
+        </div>
+
+        <div class="winner-timestamp" id="winnerTimestampDisplay">
+          ⏰ Thời gian trao giải: 23:15:00 - Chủ Nhật, 11/10/2026
+        </div>
+
+        <div class="modal-actions">
+          <button id="btnViewAllRanksInModal" class="btn-modal-action btn-secondary-action">📋 Xem tất cả xếp hạng</button>
+          <button id="btnCopyResult" class="btn-modal-action btn-secondary-action">📋 Sao chép kết quả</button>
+          <button id="btnNextRound" class="btn-modal-action btn-primary-action">🔄 Vòng đấu tiếp theo</button>
+          <button id="btnCloseWinnerModal" class="btn-modal-action btn-secondary-action">Đóng</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- WINNER HISTORY DRAWER -->
+    <div id="historyDrawer" class="history-drawer">
+      <div class="drawer-header">
+        <h2 class="drawer-title">📜 Lịch Sử Trao Quà Live</h2>
+        <button id="btnCloseHistory" class="drawer-close" title="Đóng">✕</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">Chưa có lượt trao giải nào trong buổi live này.</div>
+      </div>
+      <div class="drawer-footer">
+        <button id="btnClearHistory" class="nav-btn" style="width: 100%;">Làm mới lịch sử</button>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toastMsg" class="toast-msg">Thông báo</div>
+
+  </div>
+
+  <!-- APPLICATION SCRIPTS -->
+  <script src="js/audio.js?v=3.1"></script>
+  <script src="js/confetti.js?v=3.1"></script>
+  <script src="js/games/duckRace.js?v=3.1"></script>
+  <script src="js/games/marbleRace.js?v=3.4"></script>
+  <script src="js/games/snakeBattle.js?v=3.1"></script>
+  <script src="js/games/axeBattle.js?v=3.1"></script>
+  <script src="js/app.js?v=3.3"></script>
+</body>
+</html>
