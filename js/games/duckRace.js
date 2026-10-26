@@ -14,9 +14,10 @@ class DuckRace {
     this.isPaused = false;
     this.finishedDucks = [];
     this.animId = null;
-    this.raceStartTime = 0;
+    this.simTimeMs = 0;
     this.elapsedSec = 0;
     this.finishTriggered = false;
+    this.finishTimeout = null;
 
     // Visual enhancements
     this.waterWaves = [];
@@ -77,6 +78,9 @@ class DuckRace {
     this.isPaused = false;
     this.finishTriggered = false;
     this.elapsedSec = 0;
+    resetSimClock(this);
+    // Canvas size may have changed since the last round: re-scatter waves & lilies over the new river
+    this.initVisualAssets();
 
     const count = playerNames.length;
     const riverTop = 95;
@@ -105,11 +109,16 @@ class DuckRace {
 
     const baseSpeed = this.trackLength / (this.targetDurationSec * 60);
 
+    // Staggered rows: the back row starts at the left edge so every duck and name tag is on screen
+    const rowGap = 42 * duckScale;
+    const backRow = Math.floor(Math.max(0, count - 1) / numLanes);
+    this.startLineX = 90 + backRow * rowGap;
+
     this.ducks = playerNames.map((name, index) => {
       const theme = duckThemes[index % duckThemes.length];
       const lane = index % numLanes;
       const row = Math.floor(index / numLanes);
-      const startX = 60 - row * (42 * duckScale) + (Math.random() - 0.5) * 14;
+      const startX = 60 + (backRow - row) * rowGap + (Math.random() - 0.5) * 14;
       const startY = riverTop + lane * laneHeight + laneHeight / 2 + (Math.random() - 0.5) * (6 * duckScale);
 
       return {
@@ -139,7 +148,7 @@ class DuckRace {
     if (this.isRunning) return;
     this.isRunning = true;
     this.isPaused = false;
-    this.raceStartTime = performance.now();
+    resetSimClock(this);
     this.elapsedSec = 0;
     if (window.soundFX) window.soundFX.playWhistle();
     this.loop();
@@ -152,6 +161,7 @@ class DuckRace {
   stop() {
     this.isRunning = false;
     this.isPaused = false;
+    clearTimeout(this.finishTimeout);
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = null;
@@ -161,7 +171,7 @@ class DuckRace {
   update() {
     if (!this.isRunning || this.isPaused) return;
 
-    this.elapsedSec = (performance.now() - this.raceStartTime) / 1000;
+    this.elapsedSec = this.simTimeMs / 1000;
     const finishLine = this.trackLength;
     const progressRatio = Math.min(1, this.elapsedSec / this.targetDurationSec);
 
@@ -211,7 +221,7 @@ class DuckRace {
       // Check finish line
       if (duck.x >= finishLine && !duck.finished) {
         duck.finished = true;
-        duck.finishTime = performance.now() - this.raceStartTime;
+        duck.finishTime = this.simTimeMs;
         this.finishedDucks.push(duck);
 
         if (this.finishedDucks.length === 1 && window.soundFX) {
@@ -249,7 +259,7 @@ class DuckRace {
     // Finish celebration trigger
     if (this.finishedDucks.length >= Math.min(3, this.ducks.length) && !this.finishTriggered) {
       this.finishTriggered = true;
-      setTimeout(() => {
+      this.finishTimeout = setTimeout(() => {
         this.stop();
         if (this.onFinishCallback) {
           this.onFinishCallback(this.finishedDucks);
@@ -390,9 +400,10 @@ class DuckRace {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 4;
     ctx.setLineDash([8, 8]);
+    const startX = this.startLineX || 90;
     ctx.beginPath();
-    ctx.moveTo(90, 55);
-    ctx.lineTo(90, h - 55);
+    ctx.moveTo(startX, 55);
+    ctx.lineTo(startX, h - 55);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -684,7 +695,7 @@ class DuckRace {
 
   loop() {
     if (!this.isRunning) return;
-    this.update();
+    runFixedSteps(this);
     this.render();
     this.animId = requestAnimationFrame(() => this.loop());
   }

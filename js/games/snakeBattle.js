@@ -21,7 +21,9 @@ class SnakeBattle {
     this.zoneState = 'safe';
     this.zoneHUDText = '🛡️ VÙNG AN TOÀN';
     this.matchTimer = 0;
+    this.simTimeMs = 0;
     this.finishTriggered = false;
+    this.finishTimeout = null;
   }
 
   setPace(pace) {
@@ -70,16 +72,17 @@ class SnakeBattle {
     this.isPaused = false;
     this.matchTimer = 0;
     this.finishTriggered = false;
+    resetSimClock(this);
 
-    // Full Rectangular Map covering the entire canvas
+    // Full Rectangular Map covering the entire canvas (no minimum larger than a phone screen)
     const margin = 20;
     const canW = this.canvas.width || 1280;
     const canH = this.canvas.height || 720;
     this.initialZone = {
       x: margin,
       y: margin,
-      width: Math.max(480, canW - margin * 2),
-      height: Math.max(340, canH - margin * 2),
+      width: Math.max(200, canW - margin * 2),
+      height: Math.max(200, canH - margin * 2),
       cornerRadius: 18
     };
     this.currentZone = { ...this.initialZone };
@@ -237,7 +240,7 @@ class SnakeBattle {
     if (this.isRunning) return;
     this.isRunning = true;
     this.isPaused = false;
-    this.startTimestamp = performance.now();
+    resetSimClock(this);
     this.matchTimer = 0;
     this.finishTriggered = false;
     if (window.soundFX) window.soundFX.playWhistle();
@@ -251,6 +254,7 @@ class SnakeBattle {
   stop() {
     this.isRunning = false;
     this.isPaused = false;
+    clearTimeout(this.finishTimeout);
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = null;
@@ -261,8 +265,7 @@ class SnakeBattle {
     if (!this.isRunning || this.isPaused) return;
 
     this.matchTimer++;
-    const now = performance.now();
-    const currentSec = (now - this.startTimestamp) / 1000;
+    const currentSec = this.simTimeMs / 1000;
     const totalSec = this.targetDurationSec || 90;
     const centerX = this.canvas.width / 2;
     const centerY = this.canvas.height / 2;
@@ -412,7 +415,7 @@ class SnakeBattle {
       s.y += Math.sin(s.angle) * s.speed;
 
       // Inverse Kinematics Body Follow
-      const segSpacing = 9;
+      const segSpacing = s.segSpacing || 9;
       s.segments[0] = { x: s.x, y: s.y };
 
       for (let i = 1; i < s.segments.length; i++) {
@@ -544,17 +547,18 @@ class SnakeBattle {
       );
     }
 
-    // Check Match Finish (1 or 0 snake left)
+    // Check Match Finish (1 or 0 snake left). Safety net: if several snakes still survive a full
+    // minute after the zone closed, the longest survivors win so a live giveaway always ends.
     const remaining = this.snakes.filter(s => s.alive);
-    if (remaining.length <= 1 && !this.finishTriggered) {
+    const overtime = currentSec >= totalSec + 60;
+    if ((remaining.length <= 1 || overtime) && !this.finishTriggered) {
       this.finishTriggered = true;
-      setTimeout(() => {
+      this.finishTimeout = setTimeout(() => {
         this.stop();
 
-        const podium = [];
-        if (remaining.length === 1) {
-          podium.push(remaining[0]);
-        }
+        const podium = [...remaining]
+          .sort((a, b) => b.segments.length - a.segments.length)
+          .slice(0, 3);
         for (let i = this.eliminatedSnakes.length - 1; i >= 0; i--) {
           if (podium.length < 3) {
             podium.push(this.eliminatedSnakes[i]);
@@ -690,8 +694,11 @@ class SnakeBattle {
       f.pulse += 0.05;
       const r = f.size + Math.sin(f.pulse) * 0.8;
       ctx.fillStyle = f.color;
-      ctx.shadowColor = f.color;
-      ctx.shadowBlur = 6;
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, r * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -871,7 +878,8 @@ class SnakeBattle {
     const aliveCount = this.snakes.filter(s => s.alive).length;
     const total = this.snakes.length;
 
-    const hudW = 420;
+    const isNarrow = w < 520;
+    const hudW = Math.min(420, w - 24);
     const hudH = 38;
     const hudX = w / 2 - hudW / 2;
     const hudY = 16;
@@ -891,18 +899,18 @@ class SnakeBattle {
     }
     ctx.stroke();
 
-    ctx.font = 'bold 13.5px "Outfit", "Be Vietnam Pro", sans-serif';
+    ctx.font = `bold ${isNarrow ? 11 : 13.5}px "Outfit", "Be Vietnam Pro", sans-serif`;
     ctx.textAlign = 'center';
 
     const zoneText = this.zoneHUDText || '🛡️ VÙNG AN TOÀN';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`🐍 ${aliveCount}/${total} Còn Sống   |   ${zoneText}`, w / 2, hudY + 24);
+    ctx.fillText(`🐍 ${aliveCount}/${total}${isNarrow ? ' | ' : ' Còn Sống   |   '}${zoneText}`, w / 2, hudY + 24, hudW - 16);
     ctx.restore();
   }
 
   loop() {
     if (!this.isRunning) return;
-    this.update();
+    runFixedSteps(this);
     this.render();
     this.animId = requestAnimationFrame(() => this.loop());
   }

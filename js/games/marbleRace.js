@@ -9,6 +9,7 @@ class MarbleRace {
     this.boardWidth = 1000;
     this.targetDurationSec = 90; // Default: Strictly 1m30s
     this.boardHeight = 9200; // Deep multi-stage tower
+    this.cameraX = 0;
     this.cameraY = 0;
     this.subCamY = 0;
     this.densestPackCount = 0;
@@ -24,8 +25,9 @@ class MarbleRace {
     this.isRunning = false;
     this.isPaused = false;
     this.animId = null;
-    this.raceStartTime = 0;
+    this.simTimeMs = 0;
     this.finishTriggered = false;
+    this.finishTimeout = null;
 
     this.initBoardElements();
   }
@@ -33,7 +35,7 @@ class MarbleRace {
   setPace(pace) {
     if (pace === '180s' || pace === '3m') {
       this.targetDurationSec = 180;
-      this.boardHeight = 17500;
+      this.boardHeight = 13700;
     } else if (pace === '90s' || pace === 'slow') {
       this.targetDurationSec = 90;
       this.boardHeight = 9200;
@@ -56,7 +58,11 @@ class MarbleRace {
     const spacingY = 82;
     const spacingX = 60;
     const rows = Math.floor((this.boardHeight - 230) / spacingY);
-    const bumperYList = [600, 1200, 2600, 3400, 5000, 5800, 7400, 8200];
+    // Repeating 2400px stage: funnel + rotator, then two bumper rows
+    const funnelStages = [];
+    for (let fy = 2000; fy < this.boardHeight - 1200; fy += 2400) funnelStages.push(fy);
+    const bumperYList = [600, 1200];
+    for (let fy of funnelStages) bumperYList.push(fy + 600, fy + 1400);
 
     // 1. Grid of Uniform Staggered Neon Pegs (Classic Plinko Lattice)
     // Symmetrical about center x = 500, with at least 60px between ANY two adjacent pegs!
@@ -72,13 +78,19 @@ class MarbleRace {
 
       for (let x = startX; x <= endX + 1; x += spacingX) {
         // Leave clearance for rotating obstacles and center funnels
-        if (y > 1800 && y < 2200 && Math.abs(x - 500) < 180) continue;
-        if (y > 4200 && y < 4600 && Math.abs(x - 500) < 180) continue;
-        if (y > 6600 && y < 7000 && Math.abs(x - 500) < 180) continue;
+        if (Math.abs(x - 500) < 180 && funnelStages.some(fy => y > fy - 200 && y < fy + 200)) continue;
 
         // Leave clearance around forcefield bumpers so pegs don't wedge with bumpers
         const nearBumper = bumperYList.some(by => Math.abs(y - by) < 60 && (Math.abs(x - 280) < 55 || Math.abs(x - 720) < 55));
         if (nearBumper) continue;
+
+        // Leave clearance along the slanted funnel walls: a peg closer to the wall than a
+        // marble's diameter forms a pocket the marble can never leave (race never finishes)
+        const nearFunnelWall = funnelStages.some(fy => {
+          if (y < fy - 25 || y > fy + 185) return false;
+          return Math.abs(x - 500) > this.getFunnelRadius(Math.max(fy, Math.min(fy + 160, y)), fy) - 42;
+        });
+        if (nearFunnelWall) continue;
 
         this.pegs.push({
           x: Math.round(x),
@@ -98,23 +110,28 @@ class MarbleRace {
     }
 
     // 3. Central Funnel Chutes (Slow down and reshuffle pack)
-    const funnelStages = [2000, 4400, 6800];
     for (let fy of funnelStages) {
-      if (fy < this.boardHeight - 600) {
-        this.funnels.push({ y: fy, width: 340 });
-        this.rotators.push({
-          x: 500,
-          y: fy + 120,
-          length: 160,
-          angle: Math.random() * Math.PI,
-          speed: 0.025
-        });
-      }
+      this.funnels.push({ y: fy, width: 340 });
+      this.rotators.push({
+        x: 500,
+        y: fy + 120,
+        length: 160,
+        angle: Math.random() * Math.PI,
+        speed: 0.025
+      });
     }
+  }
+
+  // Half-width of the funnel opening at board height y (funnel starts at fy, 160px tall)
+  getFunnelRadius(y, fy) {
+    const ratio = (y - fy) / 160;
+    return (this.boardWidth - 170) / 2 * (1 - ratio * 0.7);
   }
 
   setup(playerNames) {
     this.stop();
+    resetSimClock(this);
+    this.cameraX = 0;
     this.cameraY = 0;
     this.subCamY = 0;
     this.densestPackCount = 0;
@@ -174,7 +191,7 @@ class MarbleRace {
     if (this.isRunning) return;
     this.isRunning = true;
     this.isPaused = false;
-    this.raceStartTime = performance.now();
+    resetSimClock(this);
     if (window.soundFX) window.soundFX.playWhistle();
     this.loop();
   }
@@ -186,6 +203,7 @@ class MarbleRace {
   stop() {
     this.isRunning = false;
     this.isPaused = false;
+    clearTimeout(this.finishTimeout);
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = null;
@@ -256,8 +274,17 @@ class MarbleRace {
           m.vx = kickDir * (2.8 + Math.random() * 2.2);
           m.vy = 3.4 + Math.random() * 1.5;
           m.y += 3;
+
+          // Kicks keep failing (marble wedged in a pocket): shift it out towards the centre lane
+          m.failedKicks = (m.failedKicks || 0) + 1;
+          if (m.failedKicks >= 3) {
+            m.x += kickDir * 40;
+            m.y += 20;
+            m.failedKicks = 0;
+          }
         } else {
           m.stuckTimer = 0;
+          m.failedKicks = 0;
         }
         m.anchorY = m.y;
         m.progressTimer = 0;
@@ -266,8 +293,7 @@ class MarbleRace {
       // Funnel Guides (guide marbles smoothly towards center funnel chutes)
       for (let f of this.funnels) {
         if (m.y >= f.y && m.y <= f.y + 160) {
-          const ratio = (m.y - f.y) / 160;
-          const funnelRadius = (this.boardWidth - 170) / 2 * (1 - ratio * 0.7);
+          const funnelRadius = this.getFunnelRadius(m.y, f.y);
           const distFromCenter = m.x - 500;
           if (Math.abs(distFromCenter) > funnelRadius) {
             m.x = 500 + Math.sign(distFromCenter) * funnelRadius;
@@ -330,6 +356,35 @@ class MarbleRace {
 
           this.createSparks(m.x, m.y, b.color);
           if (window.soundFX) window.soundFX.playBounce(440);
+        }
+      }
+
+      // Collision with Rotating Bars (bar surface speed is added so the spinner flicks marbles)
+      for (let rot of this.rotators) {
+        if (Math.abs(m.y - rot.y) > rot.length / 2 + m.radius + 6) continue;
+        const ux = Math.cos(rot.angle);
+        const uy = Math.sin(rot.angle);
+        const t = Math.max(-rot.length / 2, Math.min(rot.length / 2, (m.x - rot.x) * ux + (m.y - rot.y) * uy));
+        const cx = rot.x + ux * t;
+        const cy = rot.y + uy * t;
+        const dx = m.x - cx;
+        const dy = m.y - cy;
+        const dist = Math.hypot(dx, dy);
+        const minDist = m.radius + 6;
+
+        if (dist < minDist) {
+          const nx = dist > 0 ? dx / dist : -uy;
+          const ny = dist > 0 ? dy / dist : ux;
+          m.x = cx + nx * minDist;
+          m.y = cy + ny * minDist;
+
+          const surfVx = -uy * t * rot.speed;
+          const surfVy = ux * t * rot.speed;
+          const relDot = (m.vx - surfVx) * nx + (m.vy - surfVy) * ny;
+          if (relDot < 0) {
+            m.vx -= (1 + bounceFriction) * relDot * nx;
+            m.vy -= (1 + bounceFriction) * relDot * ny;
+          }
         }
       }
 
@@ -437,8 +492,13 @@ class MarbleRace {
     // 1. MÀN HÌNH TO (Cam chính): LUÔN LUÔN bám sát Người Dẫn Đầu!
     // 2. MÀN HÌNH NHỎ (Cam phụ PiP góc dưới phải): Theo dõi đoàn bám đuổi / người đang tiếp tục hành trình!
     // =========================================================================
-    const targetMainCamY = Math.max(0, Math.min(this.boardHeight - this.canvas.height, leaderY - this.canvas.height * 0.35));
+    const view = this.getViewport();
+    const targetMainCamY = Math.max(0, Math.min(this.boardHeight - view.height, leaderY - view.height * 0.35));
     this.cameraY += (targetMainCamY - this.cameraY) * 0.08;
+
+    const leaderX = sortedByY.length > 0 ? sortedByY[0].x : this.boardWidth / 2;
+    const targetMainCamX = Math.max(0, Math.min(this.boardWidth - view.width, leaderX - view.width / 2));
+    this.cameraX += (targetMainCamX - this.cameraX) * 0.08;
 
     let targetSubCamY = Math.max(0, Math.min(this.boardHeight - 300, densestPackY));
     this.subCamY += (targetSubCamY - this.subCamY) * 0.08;
@@ -454,16 +514,35 @@ class MarbleRace {
       );
     }
 
+    // Safety net: a live giveaway must always end with a winner. If the race runs far past its
+    // target length, the deepest unfinished marbles take the remaining podium places.
+    if (!this.finishTriggered && this.simTimeMs / 1000 >= this.targetDurationSec * 2) {
+      const rest = this.marbles.filter(m => !m.finished).sort((a, b) => b.y - a.y);
+      for (let m of rest) {
+        if (this.finishMarbles.length >= Math.min(3, this.marbles.length)) break;
+        m.finished = true;
+        this.finishMarbles.push(m);
+        m.finishRank = this.finishMarbles.length;
+      }
+    }
+
     // Check race finish
     if (this.finishMarbles.length >= Math.min(3, this.marbles.length) && !this.finishTriggered) {
       this.finishTriggered = true;
-      setTimeout(() => {
+      this.finishTimeout = setTimeout(() => {
         this.stop();
         if (this.onFinishCallback) {
           this.onFinishCallback(this.finishMarbles);
         }
       }, 1500);
     }
+  }
+
+  // Visible board area. Wide screens fit the full board width; narrow (mobile) screens keep the
+  // marbles readable by zooming in to at least 0.55x and panning sideways with the leader.
+  getViewport() {
+    const scale = Math.max(this.canvas.width / this.boardWidth, 0.55);
+    return { scale, width: this.canvas.width / scale, height: this.canvas.height / scale };
   }
 
   createSparks(x, y, color) {
@@ -488,11 +567,13 @@ class MarbleRace {
 
     ctx.clearRect(0, 0, w, h);
 
-    const scale = w / this.boardWidth;
+    const view = this.getViewport();
+    const viewTop = this.cameraY - 60;
+    const viewBottom = this.cameraY + view.height + 60;
 
     ctx.save();
-    ctx.scale(scale, scale);
-    ctx.translate(0, -this.cameraY);
+    ctx.scale(view.scale, view.scale);
+    ctx.translate(-this.cameraX, -this.cameraY);
 
     // 1. Cyberpunk Backdrop
     const boardGrad = ctx.createLinearGradient(0, 0, 0, this.boardHeight);
@@ -532,8 +613,9 @@ class MarbleRace {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // 3. Neon Pegs
+    // 3. Neon Pegs (only those on screen: the 3-minute tower has thousands)
     for (let peg of this.pegs) {
+      if (peg.y < viewTop || peg.y > viewBottom) continue;
       if (peg.hitPulse > 0) {
         ctx.fillStyle = '#00f0ff';
         ctx.shadowColor = '#00f0ff';
@@ -556,6 +638,7 @@ class MarbleRace {
 
     // 4. Forcefield Bumpers
     for (let b of this.bumpers) {
+      if (b.y < viewTop || b.y > viewBottom) continue;
       ctx.save();
       ctx.fillStyle = b.color;
       ctx.shadowColor = b.color;
@@ -578,10 +661,11 @@ class MarbleRace {
       ctx.lineWidth = 3;
       ctx.setLineDash([8, 8]);
       ctx.beginPath();
+      const exitRadius = this.getFunnelRadius(f.y + 160, f.y);
       ctx.moveTo(85, f.y);
-      ctx.lineTo(500 - f.width / 2, f.y + 160);
+      ctx.lineTo(500 - exitRadius, f.y + 160);
       ctx.moveTo(this.boardWidth - 85, f.y);
-      ctx.lineTo(500 + f.width / 2, f.y + 160);
+      ctx.lineTo(500 + exitRadius, f.y + 160);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -618,6 +702,7 @@ class MarbleRace {
 
     // 8. Marbles (3D Glass Sphere Rendering)
     for (let m of this.marbles) {
+      if (m.y < viewTop || m.y > viewBottom) continue;
       this.drawMarble(ctx, m);
     }
 
@@ -655,7 +740,7 @@ class MarbleRace {
       bgGradColor = 'rgba(0, 240, 255, 0.12)';
     }
 
-    ctx.font = 'bold 13px "Outfit", sans-serif';
+    ctx.font = `bold ${w < 520 ? 11 : 13}px "Outfit", sans-serif`;
     const textW = ctx.measureText(text).width;
     const badgeW = textW + 46;
     const badgeH = 30;
@@ -702,14 +787,16 @@ class MarbleRace {
     ctx.save();
 
     // PiP Dimensions (Bottom Right)
-    const pipW = Math.min(270, w * 0.32);
-    const pipH = 175;
+    const pipW = Math.min(270, w * (w < 520 ? 0.42 : 0.32));
+    const pipH = Math.round(pipW * 0.65);
     const pipX = w - pipW - 18;
     const pipY = h - pipH - 20;
 
     // Sub-cam title and accent color: focuses on trailing pack & active journey racers
     const hasStuckWait = this.marbles.some(m => !m.finished && (m.stuckTimer || 0) > 15 && (m.stuckTimer || 0) < 50);
-    const pipTitle = isNearFinish
+    const pipTitle = pipW < 220
+      ? `🎥 CAM PHỤ (${this.densestPackCount} BI)`
+      : isNearFinish
       ? `🎥 CAM PHỤ: BÁM ĐUỔI VỀ ĐÍCH (${this.densestPackCount} BI)`
       : (hasStuckWait
           ? `🎥 CAM PHỤ: CHỜ VƯỢT CHƯỚNG NGẠI (${this.densestPackCount} BI)`
@@ -902,7 +989,7 @@ class MarbleRace {
 
   loop() {
     if (!this.isRunning) return;
-    this.update();
+    runFixedSteps(this);
     this.render();
     this.animId = requestAnimationFrame(() => this.loop());
   }

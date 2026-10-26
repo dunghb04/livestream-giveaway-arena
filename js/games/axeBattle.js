@@ -25,7 +25,9 @@ class AxeBattle {
     this.zoneState = 'safe'; // 'safe' | 'shrinking'
     this.zoneHUDText = '🛡️ VÙNG AN TOÀN';
     this.matchTimer = 0;
+    this.simTimeMs = 0;
     this.finishTriggered = false;
+    this.finishTimeout = null;
 
     // High-performance spatial grid for 100 players silky-smooth 60 FPS
     this.gridCellSize = 110;
@@ -115,16 +117,22 @@ class AxeBattle {
     this.isPaused = false;
     this.matchTimer = 0;
     this.finishTriggered = false;
+    resetSimClock(this);
 
     // Full Rectangular Map covering the entire canvas (khu vực màu cam full)
     const margin = 16;
     const canW = this.canvas.width || 1280;
     const canH = this.canvas.height || 720;
+
+    // Spatial grid must cover the whole canvas (it used to be fixed at 1320x770px)
+    this.gridCols = Math.max(1, Math.ceil(canW / this.gridCellSize));
+    this.gridRows = Math.max(1, Math.ceil(canH / this.gridCellSize));
+
     this.initialRect = {
       x: margin,
       y: margin,
-      width: Math.max(480, canW - margin * 2),
-      height: Math.max(340, canH - margin * 2),
+      width: Math.max(200, canW - margin * 2),
+      height: Math.max(200, canH - margin * 2),
       cornerRadius: 14
     };
     this.currentRect = { ...this.initialRect };
@@ -359,7 +367,7 @@ class AxeBattle {
     if (this.isRunning) return;
     this.isRunning = true;
     this.isPaused = false;
-    this.startTimestamp = performance.now();
+    resetSimClock(this);
     this.matchTimer = 0;
     this.finishTriggered = false;
     if (window.soundFX) window.soundFX.playWhistle();
@@ -373,6 +381,7 @@ class AxeBattle {
   stop() {
     this.isRunning = false;
     this.isPaused = false;
+    clearTimeout(this.finishTimeout);
     if (this.animId) {
       cancelAnimationFrame(this.animId);
       this.animId = null;
@@ -387,8 +396,7 @@ class AxeBattle {
     if (!this.isRunning || this.isPaused) return;
 
     this.matchTimer++;
-    const now = performance.now();
-    const currentSec = (now - this.startTimestamp) / 1000;
+    const currentSec = this.simTimeMs / 1000;
     const totalSec = this.targetDurationSec || 180;
     const phaseDur = totalSec / 6; // 30s per phase for 180s total
 
@@ -485,16 +493,6 @@ class AxeBattle {
     }
 
     const aliveWarriors = this.warriors.filter(w => w.alive);
-
-    // =========================================================================
-    // 3-MINUTE SURVIVAL PACING GOVERNOR
-    // Ensures gradual, suspenseful elimination curve across full 180 seconds:
-    // ~86% at 30s, ~70% at 60s (1m), ~52% at 90s, ~35% at 120s (2m), ~18% at 150s, Top 2-3 at 180s!
-    // =========================================================================
-    const matchProgress = Math.min(1.0, currentSec / totalSec);
-    const targetAliveRatio = Math.max(0.04, Math.pow(1 - matchProgress, 0.88));
-    const targetAliveCount = Math.max(2, Math.round(this.warriors.length * targetAliveRatio));
-    const isDroppingTooFast = aliveWarriors.length <= targetAliveCount;
 
     // =========================================================================
     // SPATIAL GRID BINNING (O(N) Complexity: Silky Smooth 60 FPS with 100 Players!)
@@ -781,7 +779,7 @@ class AxeBattle {
       if (myBucket) {
         for (let k = myBucket.length - 1; k >= 0; k--) {
           const orb = myBucket[k];
-          const dSq = (w.x - orb.x) * (w.x - orb.x) + (w.y - orb.y) * (orb.y - w.y);
+          const dSq = (w.x - orb.x) * (w.x - orb.x) + (w.y - orb.y) * (w.y - orb.y);
           if (dSq < pickupDistSq) {
             w.xp += orb.value;
             const idx = this.xpOrbs.indexOf(orb);
@@ -1084,7 +1082,7 @@ class AxeBattle {
 
     if ((remaining.length <= 1 || timeLimitReached) && !this.finishTriggered) {
       this.finishTriggered = true;
-      setTimeout(() => {
+      this.finishTimeout = setTimeout(() => {
         this.stop();
 
         const podium = [];
@@ -1360,7 +1358,7 @@ class AxeBattle {
 
   // Draw Authentic EvoWars Hexagon Honeycomb Background using fast cached offscreen canvas
   drawHexGrid(ctx, w, h, r) {
-    if (!this.hexGridCanvas) this.buildHexGridCache();
+    if (!this.hexGridCanvas || this.hexGridCanvas.width !== w || this.hexGridCanvas.height !== h) this.buildHexGridCache();
     ctx.save();
     ctx.beginPath();
     ctx.roundRect(r.x, r.y, r.width, r.height, r.cornerRadius || 14);
@@ -2112,7 +2110,8 @@ class AxeBattle {
     const aliveCount = this.warriors.filter(wr => wr.alive).length;
     const total = this.warriors.length;
 
-    const hudW = 420;
+    const isNarrow = w < 520;
+    const hudW = Math.min(420, w - 24);
     const hudH = 38;
     const hudX = w / 2 - hudW / 2;
     const hudY = 16;
@@ -2132,19 +2131,19 @@ class AxeBattle {
     }
     ctx.stroke();
 
-    ctx.font = 'bold 13.5px "Outfit", "Be Vietnam Pro", sans-serif';
+    ctx.font = `bold ${isNarrow ? 11 : 13.5}px "Outfit", "Be Vietnam Pro", sans-serif`;
     ctx.textAlign = 'center';
 
     // Alive Count & Zone Phase
     const zoneText = this.zoneHUDText || '🛡️ VÙNG AN TOÀN';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`⚔️ ${aliveCount}/${total} Sống Sót   |   ${zoneText}`, w / 2, hudY + 24);
+    ctx.fillText(`⚔️ ${aliveCount}/${total}${isNarrow ? ' | ' : ' Sống Sót   |   '}${zoneText}`, w / 2, hudY + 24, hudW - 16);
     ctx.restore();
   }
 
   loop() {
     if (!this.isRunning) return;
-    this.update();
+    runFixedSteps(this);
     this.render();
     this.animId = requestAnimationFrame(() => this.loop());
   }

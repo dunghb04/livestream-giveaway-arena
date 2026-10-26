@@ -2,7 +2,8 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e17">
   <title>🎪 Đấu Trường Tri Ân - Livestream Giveaway Arena</title>
   <meta name="description" content="Hệ thống mini-game đua vịt, đua bi và sinh tồn kịch tính dành riêng cho livestream tri ân và tặng quà người xem cuối tuần.">
   
@@ -11,22 +12,27 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="css/style.css?v=3.2">
+  <link rel="stylesheet" href="css/style.css?v=4.0">
   <script>
-    window.onerror = function(msg, url, line, col, error) {
-      var d = document.createElement('div');
-      d.id = 'GLOBAL_SCRIPT_ERROR';
-      d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#ff0033;color:#fff;padding:24px;font-size:18px;font-family:monospace;z-index:999999;border-bottom:3px solid #fff;white-space:pre-wrap;';
-      d.textContent = '❌ JS ERROR: ' + msg + '\nLocation: ' + url + ':' + line + ':' + col + '\nStack: ' + (error ? error.stack : 'N/A');
-      document.body ? document.body.appendChild(d) : window.addEventListener('DOMContentLoaded', function() { document.body.appendChild(d); });
-    };
-    window.addEventListener('unhandledrejection', function(e) {
-      var d = document.createElement('div');
-      d.id = 'GLOBAL_PROMISE_ERROR';
-      d.style.cssText = 'position:fixed;top:100px;left:0;right:0;background:#cc0000;color:#fff;padding:24px;font-size:18px;font-family:monospace;z-index:999999;';
-      d.textContent = '❌ UNHANDLED REJECTION: ' + (e.reason ? (e.reason.stack || e.reason) : e);
-      document.body ? document.body.appendChild(d) : window.addEventListener('DOMContentLoaded', function() { document.body.appendChild(d); });
-    });
+    // Developer error banner: only on the local machine (never over a live stream from the
+    // deployed site), and clicking it dismisses it.
+    (function() {
+      var isLocal = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+      if (!isLocal) return;
+      function showError(text, top) {
+        var d = document.createElement('div');
+        d.style.cssText = 'position:fixed;top:' + top + 'px;left:0;right:0;background:#ff0033;color:#fff;padding:16px 24px;font-size:14px;font-family:monospace;z-index:999999;white-space:pre-wrap;cursor:pointer;';
+        d.textContent = text + '\n(Bấm để ẩn)';
+        d.addEventListener('click', function() { d.remove(); });
+        document.body ? document.body.appendChild(d) : window.addEventListener('DOMContentLoaded', function() { document.body.appendChild(d); });
+      }
+      window.onerror = function(msg, url, line, col, error) {
+        showError('❌ JS ERROR: ' + msg + '\nLocation: ' + url + ':' + line + ':' + col + '\nStack: ' + (error ? error.stack : 'N/A'), 0);
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        showError('❌ UNHANDLED REJECTION: ' + (e.reason ? (e.reason.stack || e.reason) : e), 100);
+      });
+    })();
   </script>
 </head>
 <body>
@@ -48,13 +54,13 @@
       <!-- TOP CONTROLS -->
       <div class="top-controls">
         <button id="btnToggleAudio" class="nav-btn active" title="Bật/Tắt âm thanh trò chơi">
-          🔊 Âm thanh
+          <span class="nav-btn-icon">🔊</span><span class="nav-btn-label">Âm thanh</span>
         </button>
         <button id="btnOpenHistory" class="nav-btn" title="Xem danh sách người đã trúng thưởng">
-          📜 Lịch sử trao giải
+          <span class="nav-btn-icon">📜</span><span class="nav-btn-label">Lịch sử trao giải</span>
         </button>
         <button id="btnToggleFullscreen" class="nav-btn" title="Toàn màn hình">
-          ⛶ Toàn màn hình
+          <span class="nav-btn-icon">⛶</span><span class="nav-btn-label">Toàn màn hình</span>
         </button>
       </div>
     </header>
@@ -122,6 +128,9 @@
           </div>
         </section>
 
+        <!-- On phones the 10-round results panel is moved here (below the arena) by app.js -->
+        <section class="sidebar-section mobile-results-slot" id="mobileResultsSlot"></section>
+
         <!-- SIDEBAR FOOTER: BIG ACTION BUTTONS -->
         <div class="sidebar-footer">
           <button id="btnStartRace" class="btn-start-race">
@@ -143,9 +152,9 @@
 
         <!-- HUD: LIVE MATCH TIMER -->
         <div class="hud-overlay">
-          <div class="match-timer-pill" id="matchTimerPill">
-            <span class="timer-icon">⏳</span>
-            <span class="timer-text" id="matchTimerText">03:00</span>
+          <div class="match-timer-pill" id="matchTimerPill" title="Thời gian trận đấu">
+            <span class="timer-icon">⏱</span>
+            <span class="timer-text" id="matchTimerText">00:00</span>
           </div>
         </div>
 
@@ -154,6 +163,7 @@
           <div class="post-race-header">
             <div class="post-race-title">🏆 KẾT QUẢ CHUNG CUỘC</div>
             <div class="post-race-round-badge" id="postRaceRoundBadge">0/10 Lượt</div>
+            <button class="post-race-toggle" id="btnToggleResults" title="Thu gọn / mở rộng bảng kết quả" aria-controls="postRaceWinnersList">▴</button>
           </div>
           <div class="post-race-winners-list" id="postRaceWinnersList">
             <div class="no-winners-hint">Chưa có người thắng cuộc.<br>Bắt đầu Lượt 1 để trao quà!</div>
@@ -237,10 +247,11 @@
   <!-- APPLICATION SCRIPTS -->
   <script src="js/audio.js?v=3.1"></script>
   <script src="js/confetti.js?v=3.1"></script>
-  <script src="js/games/duckRace.js?v=3.1"></script>
-  <script src="js/games/marbleRace.js?v=3.4"></script>
-  <script src="js/games/snakeBattle.js?v=3.1"></script>
-  <script src="js/games/axeBattle.js?v=3.1"></script>
-  <script src="js/app.js?v=3.3"></script>
+  <script src="js/gameLoop.js?v=4.0"></script>
+  <script src="js/games/duckRace.js?v=4.0"></script>
+  <script src="js/games/marbleRace.js?v=4.0"></script>
+  <script src="js/games/snakeBattle.js?v=4.0"></script>
+  <script src="js/games/axeBattle.js?v=4.0"></script>
+  <script src="js/app.js?v=4.0"></script>
 </body>
 </html>
